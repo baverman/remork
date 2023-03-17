@@ -1,0 +1,4 @@
+*.pyc
+/TODO
+/test.py
+/.coverage
