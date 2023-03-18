@@ -2,3 +2,5 @@
 /TODO
 /test.py
 /.coverage
+/dist
+/*.egg-info

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "remork"
+dependencies = [
+    "testinfra",
+]
+authors = [
+    {name = "Anton Bobrov", email = "baverman+pypi@gmail.com"},
+]
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text="MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dynamic = ["version"]
+
+[tool.setuptools.packages.find]
+include = ["remork"]
+
+[tool.setuptools.dynamic]
+version = {attr = "remork.VERSION"}
