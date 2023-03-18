@@ -58,11 +58,14 @@ class StopDrain(Exception):
 
 
 def bg(fn, *args, **kwargs):
+    log = kwargs.pop('log_', None)
     def wrapper():
         try:
             fn(*args, **kwargs)
         except:  # pragma: no cover
-            if traceback is not None:
+            if log:
+                log.exception('{} router error'.format(SIDE))
+            elif traceback is not None:
                 traceback.print_exc()
 
     t = threading.Thread(target=wrapper)

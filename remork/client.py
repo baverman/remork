@@ -69,7 +69,7 @@ class ProcessRouter(LocalRouter):
     def connect(self):
         self.reset()
         self.proc = subprocess.Popen(self.cmd, shell=self.shell, stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, bufsize=0)
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
 
     def handshake(self):
         ack = os.urandom(10)
@@ -80,7 +80,7 @@ class ProcessRouter(LocalRouter):
         remote_ack = self.proc.stdout.read(10)
         if ack != remote_ack:
             raise ConnectException(
-                'Invalid ack: \n' + repr(self.proc.stdout.read()))
+                'Invalid ack: \n' + repr(self.proc.stdout.read()) + '\n' + repr(self.proc.stderr.read()))
         router.debug('handshake done', level=1)
 
     def check(self):
@@ -95,12 +95,17 @@ class ProcessRouter(LocalRouter):
                 break
             time.sleep(0.9)
 
+    def print_err(self, data):
+        if data:
+            log.error('REMOTE stderr: ' + repr(data))
+
     def process(self):
         self.handshake()
         proto = msg_proto_decode(self.handle_msg)
-        t1 = bg(drain, self.proc.stdout, proto)
-        t2 = bg(copy, self.proc.stdin, self.buffer)
-        bg(self.monitor)
+        bg(drain, self.proc.stdout, proto, log_=log)
+        bg(drain, self.proc.stderr, self.print_err, log_=log)
+        bg(copy, self.proc.stdin, self.buffer, log_=log)
+        bg(self.monitor, log_=log)
 
     def close(self):
         router.debug('Closing local router', level=1)
