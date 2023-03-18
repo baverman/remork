@@ -3,9 +3,12 @@ import zlib
 import shlex
 import subprocess
 import time
+import logging
 
 from . import process, files, router
 from .router import copy, copydata, msg_proto_decode, drain, bg, bstr, LocalRouter, msg_call
+
+log = logging.getLogger('remork.client')
 
 BOOT_TAIL = '''\
 DEBUG = %d
@@ -134,6 +137,8 @@ def connect(python_cmd=['python'], shell_cmd=None, double_quote=False, debug=Non
             python_cmd = shell_cmd.replace('{cmd}', shlex.quote(python_cmd))
 
     sources = make_source_bundle(MODULES + (additional or []))
+    log.info('Creating router: %s', python_cmd)
+
     c = ProcessRouter(python_cmd, stage1, sources, shell=shell)
     c.connect()
     c.process()
