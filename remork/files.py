@@ -57,6 +57,41 @@ def lineinfile(path, line):
     return not found
 
 
+def find_line(lines, line):
+    try:
+        return lines.index(line)
+    except ValueError:
+        return None
+
+
+@simplecall
+def blockinfile(path, marker, block):
+    path = nstr(path)
+    marker = nstr(marker)
+    block = nstr(block)
+    startmarker = marker + ' REMORK BLOCK START'
+    endmarker = marker + ' REMORK BLOCK END'
+
+    content = read_file(path, '')
+    lines = content.splitlines()
+
+    head = lines
+    tail = []
+    start = find_line(lines, startmarker)
+    if start is not None:
+        end = find_line(lines, endmarker)
+        if end is not None:
+            head = lines[:start]
+            tail = lines[end+1:]
+
+    lines = head + [startmarker, block.rstrip('\n'), endmarker] + tail + ['']
+    newcontent = '\n'.join(lines)
+    changed = content != newcontent
+    if changed:
+        atomic_write(path, newcontent)
+    return changed
+
+
 #==LOCAL==
 from remork.router import iter_read
 

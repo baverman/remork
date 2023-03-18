@@ -48,7 +48,6 @@ def nstr(s, encoding='utf-8'):
 CALL = 1
 RESULT = 2
 DATA = 3
-MESSAGE_TYPE_MASK = 0xFF
 DATA_FLAG = 0x40
 COMPRESS_FLAG = 0x80
 

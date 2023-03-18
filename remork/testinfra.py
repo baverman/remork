@@ -67,10 +67,11 @@ class RemorkModule(InstanceModule):
                     fsource = os.path.dirname(source)
                 for fname in utils.walkdir(source, root):
                     sfname = os.path.join(fsource, fname)
-                    rv = files.upload_file_helper(
-                        self._host.backend.router,
-                        os.path.join(dest, fname),
-                        source=sfname, mode=os.stat(sfname).st_mode)
+                    with open(sfname, 'rb') as fd:
+                        rv = files.upload_file_helper(
+                            self._host.backend.router,
+                            os.path.join(dest, fname),
+                            source=fd, mode=os.fstat(fd.fileno()).st_mode)
             else:
                 raise OSError('only file and dir sources are supported')
         else:
@@ -81,6 +82,10 @@ class RemorkModule(InstanceModule):
 
     def lineinfile(self, path, line):
         rv = self._host.backend.router.call('remork.files', 'lineinfile', path, line)
+        return attrdict({'changed': rv.wait()})
+
+    def blockinfile(self, path, marker, block):
+        rv = self._host.backend.router.call('remork.files', 'blockinfile', path, marker, block)
         return attrdict({'changed': rv.wait()})
 
 
