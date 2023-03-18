@@ -1,5 +1,7 @@
 import os
 import sys
+import urllib.parse
+
 from testinfra import backend, host, modules
 from testinfra.backend import ssh, docker
 from testinfra.utils import cached_property
@@ -13,6 +15,12 @@ class attrdict(dict):
 
 
 class RemorkBackendMixin(object):
+    def __init__(self, *args, **kwargs):
+        self.remork_config = {
+            'python': kwargs.pop('remork_python', 'python'),
+        }
+        super().__init__(*args, **kwargs)
+
     def run(self, command, *args, **kwargs):
         command = self.get_command(command, *args)
         rv = process.run_helper(self.router, command, **kwargs)
@@ -26,7 +34,7 @@ class SshBackend(RemorkBackendMixin, ssh.SshBackend):
 
     @cached_property
     def router(self):
-        cmd, args = self._build_ssh_command('python')
+        cmd, args = self._build_ssh_command(self.remork_config['python'])
         command = self.quote(' '.join(cmd), *args)
         return client.connect(command, double_quote=True)
 
@@ -41,7 +49,7 @@ class DockerBackend(RemorkBackendMixin, docker.DockerBackend):
                 'docker exec -i -u %s %s /bin/sh -c {cmd}', self.user, self.name)
         else:
             shell = self.get_command('docker exec -i %s /bin/sh -c {cmd}', self.name)
-        return client.connect('python', shell_cmd=shell)
+        return client.connect(self.remork_config['python'], shell_cmd=shell)
 
 
 class RemorkModule(InstanceModule):
@@ -138,6 +146,21 @@ def command_result_repr(self):
     )
 
 backend.base.CommandResult.__repr__ = command_result_repr
+
+
+parse_host_spec_orig = backend.parse_hostspec
+def parse_hostspec(hostspec):
+    host, kw = parse_host_spec_orig(hostspec)
+
+    if hostspec is not None and "://" in hostspec:
+        url = urllib.parse.urlparse(hostspec)
+        query = urllib.parse.parse_qs(url.query)
+        for k, v in query.items():
+            if k not in kw:
+                kw[k] = v[0]
+    return host, kw
+
+backend.parse_hostspec = parse_hostspec
 
 
 if os.environ.get('REMORK_OVERRIDE_BACKEND'):
