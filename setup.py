@@ -14,7 +14,7 @@ setup(
     zip_safe=False,
     platforms='any',
     install_requires=[
-        'testinfra',
+        'pytest-testinfra',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
