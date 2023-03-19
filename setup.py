@@ -10,6 +10,7 @@ setup(
     author_email='baverman@gmail.com',
     description='Configuration management and accelerator for testinfra',
     long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
     packages=find_packages(exclude=['tests']),
     zip_safe=False,
     platforms='any',
