@@ -4,10 +4,22 @@ import urllib.parse
 
 from testinfra import backend, host, modules
 from testinfra.backend import ssh, docker
-from testinfra.utils import cached_property
 from testinfra.modules.base import InstanceModule
 
+try:
+    from testinfra.utils import cached_property
+except ImportError:
+    from functools import cached_property
+
+
 from remork import client, process, files, utils
+
+AUTODETECT_PY = [
+    'python',
+    'python3',
+    'python2',
+    '/usr/libexec/platform-python',
+]
 
 
 class attrdict(dict):
@@ -17,9 +29,16 @@ class attrdict(dict):
 class RemorkBackendMixin(object):
     def __init__(self, *args, **kwargs):
         self.remork_config = {
-            'python': kwargs.pop('remork_python', 'python'),
+            'python': kwargs.pop('remork_python', None),
         }
         super().__init__(*args, **kwargs)
+
+    @cached_property
+    def autodetected_python(self):
+        rv = super().run('sh -c "{}"'.format(' || '.join(f'command -v {it}' for it in AUTODETECT_PY)))
+        result = rv.stdout.strip()
+        assert result, "Can't detect python interpeter: " + rv.stderr
+        return result
 
     def run(self, command, *args, **kwargs):
         command = self.get_command(command, *args)
@@ -34,7 +53,7 @@ class SshBackend(RemorkBackendMixin, ssh.SshBackend):
 
     @cached_property
     def router(self):
-        cmd, args = self._build_ssh_command(self.remork_config['python'])
+        cmd, args = self._build_ssh_command(self.remork_config['python'] or self.autodetected_python)
         command = self.quote(' '.join(cmd), *args)
         return client.connect(command, double_quote=True)
 
@@ -49,7 +68,7 @@ class DockerBackend(RemorkBackendMixin, docker.DockerBackend):
                 'docker exec -i -u %s %s /bin/sh -c {cmd}', self.user, self.name)
         else:
             shell = self.get_command('docker exec -i %s /bin/sh -c {cmd}', self.name)
-        return client.connect(self.remork_config['python'], shell_cmd=shell)
+        return client.connect(self.remork_config['python'] or self.autodetected_python, shell_cmd=shell)
 
 
 class RemorkModule(InstanceModule):
