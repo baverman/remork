@@ -142,11 +142,21 @@ def command_result_repr(self):
     def indent(text, prefix):
         return '\n'.join(prefix + it for it in text.splitlines())
 
+    if hasattr(self, 'stdout_bytes'):
+        stdout = self.stdout_bytes
+    else:
+        stdout = self._stdout_bytes
+
+    if hasattr(self, 'stderr_bytes'):
+        stderr = self.stderr_bytes
+    else:
+        stderr = self._stderr_bytes
+
     out = []
-    if self._stdout_bytes:
-        out.append('  STDOUT:\n' + indent(decode(self._stdout_bytes.rstrip()), '    '))
-    if self._stderr_bytes:
-        out.append('  STDERR:\n' + indent(decode(self._stderr_bytes.rstrip()), '    '))
+    if stdout:
+        out.append('  STDOUT:\n' + indent(decode(stdout.rstrip()), '    '))
+    if stderr:
+        out.append('  STDERR:\n' + indent(decode(stderr.rstrip()), '    '))
     if out:
         out = [','] + out + ['']
 
