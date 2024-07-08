@@ -1,21 +1,45 @@
+import stat
 import os.path
+import json
 from remork.router import bstr, nstr, btype, debug, simplecall
 
 
-def upload_file(router, msg_id, dest, mode=None):
-    dest = nstr(dest)
-    if not os.path.exists(os.path.dirname(dest)):
-        os.makedirs(os.path.dirname(dest))
-
-    f = open(dest, 'wb')
-    if mode:
-        os.fchmod(f.fileno(), mode)
+def upload_files(router, msg_id):
+    cfile = [None]
+    created_dirs = set()
 
     def handler(data_type, data):
-        if data_type:
+        f = cfile[0]
+
+        if data_type == 2:  # data for current file
             f.write(data)
-        else:
-            f.close()
+        elif data_type == 1:  # new file
+            if f:  # close previous file
+                f.close()
+
+            item = json.loads(nstr(data))
+            dest = nstr(item['dest'])
+            mode = item['mode']
+
+            try:
+                fmode = os.stat(dest).st_mode
+                if not fmode & stat.S_IWUSR:
+                    os.chmod(dest, stat.S_IMODE(fmode) | stat.S_IWUSR)
+            except Exception as e:
+                pass
+
+            dname = os.path.dirname(dest)
+            if dname not in created_dirs:
+                if not os.path.exists(dname):
+                    os.makedirs(dname)
+                    created_dirs.add(dname)
+
+            cfile[0] = f = open(dest, 'wb')
+            if mode:
+                os.fchmod(f.fileno(), mode)
+        else:  # transfer end
+            if f:
+                f.close()
             router.done(msg_id)
 
     router.data_subscribe(msg_id, handler)
@@ -95,12 +119,36 @@ def blockinfile(path, marker, block):
 #==LOCAL==
 from remork.router import iter_read
 
-def upload_file_helper(router, dest, source=None, content=None, mode=None):
-    rv = router.call('remork.files', 'upload_file', dest=dest, mode=mode)
-    if content is not None:
-        rv.write_data(1, bstr(content))
-    elif source is not None:
-        for data in iter_read(source, 1 << 18):
-            rv.write_data(1, data, compress=len(data) > 512)
+def upload_files_helper(router, items):
+    rv = router.call('remork.files', 'upload_files')
+
+    for it in items:
+        if rv.done:
+            return rv.wait()  # raise possible exception
+
+        fmode = None
+        if it.get('copymode') and it.get('file'):
+            fmode = os.stat(it['file']).st_mode
+
+        dest = it['dest']
+        rv.write_data(1, bstr(json.dumps({'dest': dest, 'mode': it.get('mode') or fmode})))
+        if it.get('content') is not None:
+            rv.write_data(2, bstr(it['content']))
+        elif it.get('file'):
+            with open(it['file'], 'rb') as f:
+                for data in iter_read(f, 1 << 18):
+                    rv.write_data(2, data, compress=len(data) > 512)
+        else:
+            for data in iter_read(it['buf'], 1 << 18):
+                rv.write_data(2, data, compress=len(data) > 512)
     rv.end_data()
     return rv
+
+
+def upload_file_helper(router, dest, source=None, content=None, mode=None):
+    item = {'dest': dest, 'mode': mode, 'content': content, 'copymode': True}
+    if source and hasattr(source, 'read'):
+        item['buf'] = source
+    else:
+        item['file'] = source
+    return upload_files_helper(router, [item])

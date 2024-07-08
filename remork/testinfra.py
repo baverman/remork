@@ -75,16 +75,14 @@ class RemorkModule(InstanceModule):
     def upload(self, source=None, dest=None, content=None):
         assert dest
         assert source or content
-        rv = None
-        if source:
+        items = []
+        if source and hasattr(source, 'read'):
+            items.append({'dest': dest, 'buf': source})
+        elif source:
             if os.path.isfile(source):
                 if dest[-1] == os.sep:
                     dest = dest + os.path.basename(source)
-                if hasattr(source, 'read'):
-                    rv = files.upload_file_helper(self._host.backend.router, dest, source=source)
-                else:
-                    with open(source, 'rb') as fd:
-                        rv = files.upload_file_helper(self._host.backend.router, dest, source=fd)
+                items.append({'dest': dest, 'file': source, 'copymode': True})
             elif os.path.isdir(source):
                 root = os.path.basename(source.rstrip(os.sep))
                 fsource = source
@@ -94,18 +92,14 @@ class RemorkModule(InstanceModule):
                     fsource = os.path.dirname(source)
                 for fname in utils.walkdir(source, root):
                     sfname = os.path.join(fsource, fname)
-                    with open(sfname, 'rb') as fd:
-                        rv = files.upload_file_helper(
-                            self._host.backend.router,
-                            os.path.join(dest, fname),
-                            source=fd, mode=os.fstat(fd.fileno()).st_mode)
+                    items.append({'dest': os.path.join(dest, fname), 'file': sfname, 'copymode': True})
             else:
                 raise OSError('only file and dir sources are supported')
         else:
-            rv = files.upload_file_helper(self._host.backend.router, dest, content=content)
+            items.append({'dest': dest, 'content': content})
 
-        if rv:
-            rv.wait()
+        rv = files.upload_files_helper(self._host.backend.router, items)
+        rv.wait()
 
     def lineinfile(self, path, line):
         rv = self._host.backend.router.call('remork.files', 'lineinfile', path, line)
