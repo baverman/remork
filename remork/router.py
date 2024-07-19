@@ -316,12 +316,10 @@ def debug(*fargs, **kwargs):
 
         if not force and type(args[-1]) == type(b'') and len(args[-1]) > 100:
             args[-1] = args[-1][:100] + b'...(%d bytes total)' % len(args[-1])
-        if DEBUG_LOG:  # pragma: no cover
-            print(SIDE + ':', *(targs + args), file=DEBUG_LOG)
-            DEBUG_LOG.flush()
-        else:
-            print(SIDE + ':', *(targs + args), file=sys.stderr)
-            sys.stderr.flush()
+
+        logf = DEBUG_LOG or sys.stderr
+        print(SIDE + ':', *(targs + args), file=logf)
+        logf.flush()
 
 
 def simplecall(fn):
@@ -394,7 +392,10 @@ class Router(object):
                     result = fn(*info['args'], **info.get('kwargs', {}))
                     self.done(msg_id, result)
                 else:
-                    fn(self, msg_id, *info['args'], **info.get('kwargs', {}))
+                    g = fn(self, msg_id, *info['args'], **info.get('kwargs', {}))
+                    if getattr(g, 'send', None):
+                        next(g)
+                        self.data_subscribe(msg_id, lambda *args: g.send(args))
             elif msg_type == RESULT:
                 debug('results', self.results)
                 info = json.loads(nstr(data))
@@ -412,7 +413,10 @@ class Router(object):
                     if hasattr(r, 'feed'):
                         r.feed(data_type, data)
                     else:
-                        r(data_type, data)
+                        try:
+                            r(data_type, data)
+                        except StopIteration:
+                            pass
         except Exception as e:
             import traceback
             traceback.print_exc()

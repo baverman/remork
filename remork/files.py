@@ -4,19 +4,17 @@ import json
 from remork.router import bstr, nstr, btype, debug, simplecall
 
 if False:
-    from typing import IO
+    from typing import IO, Generator
     from remork.router import Router
 
 
 def upload_files(router, msg_id):
-    # type: (Router, int) -> None
-    cfile = [None]  # type: list[IO[bytes]] # type: ignore[list-item]
+    # type: (Router, int) -> Generator[None, tuple[int, bytes], None]
+    f = None  # type: IO[bytes]  # type: ignore[assignment]
     created_dirs = set()
 
-    def handler(data_type, data):
-        # type: (int, bytes) -> None
-        f = cfile[0]
-
+    while True:
+        data_type, data = yield
         if data_type == 2:  # data for current file
             f.write(data)
         elif data_type == 1:  # new file
@@ -40,15 +38,15 @@ def upload_files(router, msg_id):
                     os.makedirs(dname)
                     created_dirs.add(dname)
 
-            cfile[0] = f = open(dest, 'wb')
+            f = open(dest, 'wb')
             if mode:
                 os.fchmod(f.fileno(), mode)
-        else:  # transfer end
-            if f:
-                f.close()
-            router.done(msg_id)
+        else:
+            break
 
-    router.data_subscribe(msg_id, handler)
+    if f:
+        f.close()
+    router.done(msg_id)
 
 
 def read_file(path, default=''):

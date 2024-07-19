@@ -13,7 +13,7 @@ def test_client():
 
 def test_broken_client():
     with pytest.raises(client.ConnectException):
-        client.connect([sys.executable, '-m', 'non_exstent'])
+        client.connect([sys.executable, '-m', 'non_existent'])
 
     r = client.connect([sys.executable], debug=2)
     os.kill(r.proc.pid, 15)
