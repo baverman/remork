@@ -30,6 +30,15 @@ def data_gen_fn(r, msg_id, chunks):
     r.done(msg_id, None)
 
 
+def upload_file_helper(router, dest, source=None, content=None, mode=None):
+    item = {'dest': dest, 'mode': mode, 'content': content, 'copymode': True}
+    if source and hasattr(source, 'read'):
+        item['buf'] = source
+    else:
+        item['file'] = source
+    return files.upload_files_helper(router, [item])
+
+
 def test_router(router):
     rv = router.call('tests.test_router', 'some_fn', 'boo', foo='foo')
     assert rv.wait() == ['boo', 'foo']
@@ -56,12 +65,12 @@ def test_router(router):
 
 def test_file_upload(tmpdir, router):
     destfile = tmpdir.join('boo')
-    files.upload_file_helper(router, str(destfile), content=b'data').wait()
+    upload_file_helper(router, str(destfile), content=b'data').wait()
     assert destfile.read() == 'data'
 
     source = tmpdir.join('zoo')
     source.write('bazooka')
-    files.upload_file_helper(router, str(destfile), source=open(str(source), 'rb')).wait()
+    upload_file_helper(router, str(destfile), source=open(str(source), 'rb')).wait()
     assert destfile.read() == 'bazooka'
 
 

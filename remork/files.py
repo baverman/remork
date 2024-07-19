@@ -3,12 +3,18 @@ import os.path
 import json
 from remork.router import bstr, nstr, btype, debug, simplecall
 
+if False:
+    from typing import IO
+    from remork.router import Router
+
 
 def upload_files(router, msg_id):
-    cfile = [None]
+    # type: (Router, int) -> None
+    cfile = [None]  # type: list[IO[bytes]] # type: ignore[list-item]
     created_dirs = set()
 
     def handler(data_type, data):
+        # type: (int, bytes) -> None
         f = cfile[0]
 
         if data_type == 2:  # data for current file
@@ -45,7 +51,8 @@ def upload_files(router, msg_id):
     router.data_subscribe(msg_id, handler)
 
 
-def read_file(path, default=None):
+def read_file(path, default=''):
+    # type: (str, str) -> str
     if os.path.exists(path):
         with open(path) as fd:
             return fd.read()
@@ -53,6 +60,7 @@ def read_file(path, default=None):
 
 
 def atomic_write(path, content):
+    # type: (str, str | bytes) -> None
     if type(content) is btype:
         mode = 'wb'
     else:
@@ -65,6 +73,7 @@ def atomic_write(path, content):
 
 @simplecall
 def lineinfile(path, line):
+    # type: (str, str) -> bool
     line = nstr(line)
     path = nstr(path)
     lines = read_file(path, '').splitlines()
@@ -82,6 +91,7 @@ def lineinfile(path, line):
 
 
 def find_line(lines, line):
+    # type: (list[str], str) -> int | None
     try:
         return lines.index(line)
     except ValueError:
@@ -90,6 +100,7 @@ def find_line(lines, line):
 
 @simplecall
 def blockinfile(path, marker, block):
+    # type: (str, str, str) -> bool
     path = nstr(path)
     marker = nstr(marker)
     block = nstr(block)
@@ -119,12 +130,18 @@ def blockinfile(path, marker, block):
 #==LOCAL==
 from remork.router import iter_read
 
+if False:
+    from typing import Iterable, Any
+    from remork.router import Result, LocalRouter
+
+
 def upload_files_helper(router, items):
+    # type: (LocalRouter, Iterable[dict[str, Any]]) -> Result
     rv = router.call('remork.files', 'upload_files')
 
     for it in items:
         if rv.done:
-            return rv.wait()  # raise possible exception
+            return rv
 
         fmode = None
         if it.get('copymode') and it.get('file'):
@@ -143,12 +160,3 @@ def upload_files_helper(router, items):
                 rv.write_data(2, data, compress=len(data) > 512)
     rv.end_data()
     return rv
-
-
-def upload_file_helper(router, dest, source=None, content=None, mode=None):
-    item = {'dest': dest, 'mode': mode, 'content': content, 'copymode': True}
-    if source and hasattr(source, 'read'):
-        item['buf'] = source
-    else:
-        item['file'] = source
-    return upload_files_helper(router, [item])

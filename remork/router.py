@@ -28,21 +28,52 @@ SIDE = 'REMOTE'
 btype = type(b'')
 ntype = type('')
 
+if False:
+    import logging
+    from typing import (Callable, Any, Sequence, ParamSpec, TypeVar, Protocol,
+                        Iterator, Generator, Concatenate, Iterable)
+    OnResult = Callable[['Result', Any], None]
+    R = TypeVar('R', covariant=True)
+    P = ParamSpec('P')
+
+    Receiver = Generator[None, bytes, None]
+
+    class Writeable(Protocol):
+        def write(self, data):
+            # type: (bytes) -> int
+            ...
+
+    class WriteableIO(Writeable, Protocol):
+        def flush(self):
+            # type: () -> None
+            ...
+
+        def close(self):
+            # type: () -> None
+            ...
+
+    class Readable(Protocol):
+        def read(self, size):
+            # type: (int) -> bytes
+            ...
+
 
 def bstr(s, encoding='utf-8'):
+    # type: (str | bytes, str) -> bytes
     if type(s) != btype:
-        s = s.encode(encoding)
+        s = s.encode(encoding)  # type: ignore[union-attr]
     return s
 
 
 def nstr(s, encoding='utf-8'):
+    # type: (str | bytes, str) -> str
     stype = type(s)
     if stype != ntype:
         if stype == btype:
-            s = s.decode(encoding)
+            s = s.decode(encoding)  # type: ignore[union-attr]
         else:  # pragma: no cover
-            s = s.encode(encoding)
-    return s
+            s = s.encode(encoding)  # type: ignore[union-attr]
+    return s  # type: ignore[return-value]
 
 
 CALL = 1
@@ -54,17 +85,20 @@ COMPRESS_FLAG = 0x80
 
 class StopDrain(Exception):
     def __init__(self, value):  # pragma: no cover
+        # type: (Any) -> None
         self.value = value
 
 
 def bg(fn, *args, **kwargs):
+    # type: (Callable[P, R], P.args, P.kwargs) -> threading.Thread
     log = kwargs.pop('log_', None)
     def wrapper():
+        # type: () -> None
         try:
             fn(*args, **kwargs)
         except:  # pragma: no cover
             if log:
-                log.exception('{} router error'.format(SIDE))
+                log.exception('{} router error'.format(SIDE))  # type: ignore[attr-defined]
             elif traceback is not None:
                 traceback.print_exc()
 
@@ -75,6 +109,7 @@ def bg(fn, *args, **kwargs):
 
 
 def copydata(dest, data):
+    # type: (Writeable, bytes) -> None
     while data:
         size = dest.write(data)
         debug('writedata', dest, size, data[:size])
@@ -83,6 +118,7 @@ def copydata(dest, data):
 
 class Buffer(object):
     def __init__(self, size):
+        # type: (int) -> None
         lock = threading.RLock()
         self.need_space = threading.Condition(lock)
         self.need_data = threading.Condition(lock)
@@ -91,14 +127,17 @@ class Buffer(object):
         self.is_done = False
 
     def done(self):  # pragma: no cover
+        # type: () -> None
         with self.need_data:
             self.is_done = True
             self.need_data.notify()
 
     def fresh(self):
+        # type: () -> 'Buffer'
         return Buffer(self.maxsize)
 
     def write(self, data):
+        # type: (bytes) -> int
         debug('buf-write', len(self.buffer), data, level=3)
         dsize = len(data)
         assert dsize <= self.maxsize
@@ -112,6 +151,7 @@ class Buffer(object):
         return dsize
 
     def read(self, size):
+        # type: (int) -> bytes
         debug('buf-read-start', level=3)
         with self.need_data:
             debug('buf-read-lock', level=3)
@@ -129,16 +169,20 @@ class Buffer(object):
 
 class Reader(object):
     def start(self, receiver):
+        # type: (Receiver) -> Callable[[bytes], None]
         self.receiver = receiver
-        receiver.send(None)
+        next(receiver)
         gen = self.feeder()
-        gen.send(None)
+        next(gen)
         return gen.send
 
     def read(self, size):
+        # type: (int) -> None | Any
         self.size = size
+        return None
 
     def feeder(self):
+        # type: () -> Receiver
         buf = b''
         while True:
             data = yield
@@ -150,7 +194,9 @@ class Reader(object):
 
 
 def protocol(fn):
+    # type: (Callable[Concatenate[Reader, P], Receiver]) -> Callable[P, Callable[[bytes], None]]
     def inner(*args, **kwargs):
+        # type: (P.args, P.kwargs) -> Callable[[bytes], None]
         reader = Reader()
         receiver = fn(reader, *args, **kwargs)
         return reader.start(receiver)
@@ -159,6 +205,7 @@ def protocol(fn):
 
 @protocol
 def msg_proto_decode(reader, handler):
+    # type: (Reader, Callable[[int, int, bytes], None]) -> Receiver
     while True:
         data = yield reader.read(msg_hdr_st.size)
         msg_id, msg_type, size = msg_hdr_st.unpack_from(data)
@@ -174,6 +221,7 @@ def msg_proto_decode(reader, handler):
 
 
 def msg_encode(msg_id, msg_type, data, compress=False):
+    # type: (int, int, bytes, bool) -> bytes
     if compress:
         msg_type |= COMPRESS_FLAG
         data = zlib.compress(data)
@@ -181,6 +229,7 @@ def msg_encode(msg_id, msg_type, data, compress=False):
 
 
 def iter_read(src, size=IOSIZE):
+    # type: (Readable, int) -> Iterator[bytes]
     while True:
         data = src.read(size)
         if not data:
@@ -190,22 +239,32 @@ def iter_read(src, size=IOSIZE):
 
 class FD(object):  # pragma: no cover
     def __init__(self, fd):
+        # type: (int) -> None
         self.fd = fd
 
     def read(self, size):
+        # type: (int) -> bytes
         return os.read(self.fd, size)
 
     def write(self, data):
+        # type: (bytes) -> int
         return os.write(self.fd, data)
 
     def flush(self):
+        # type: () -> None
         pass
 
+    def close(self):
+        # type: () -> None
+        os.close(self.fd)
+
     def __repr__(self):
+        # type: () -> str
         return 'FD({0})'.format(self.fd)
 
 
 def iter_write(dest, iterator, size=IOSIZE, close=False, flush=False):
+    # type: (WriteableIO, Iterable[bytes], int, bool, bool) -> None
     buf = b''
     for data in iterator:
         debug('write, getdata', dest, data, level=3)
@@ -225,11 +284,13 @@ def iter_write(dest, iterator, size=IOSIZE, close=False, flush=False):
 
 
 def copy(dest, src, size=IOSIZE, close=False):
+    # type: (WriteableIO, Readable, int, bool) -> None
     it = iter_read(src, size)
     iter_write(dest, it, size, close=close)
 
 
 def drain(src, handler, size=IOSIZE):
+    # type: (Readable, Callable[[bytes], None], int) -> Any
     for data in iter_read(src, size):
         debug('read', src, data, level=3)
         try:
@@ -240,11 +301,12 @@ def drain(src, handler, size=IOSIZE):
     handler(b'')
 
 
-def debug(*args, **kwargs):
+def debug(*fargs, **kwargs):
+    # type: (Any, Any) -> None
     force = kwargs.get('force', False)
     level = kwargs.get('level', 2)
     if DEBUG >= level or force or DEBUG_LOG:  # pragma: no cover
-        args = list(args)
+        args = list(fargs)
         now = time.time()
 
         if START:  # pragma: no cover
@@ -263,51 +325,63 @@ def debug(*args, **kwargs):
 
 
 def simplecall(fn):
-    fn._remork_simple = True
+    # type: (Callable[P, R]) -> Callable[P, R]
+    fn._remork_simple = True  # type: ignore[attr-defined]
     return fn
 
 
 class Router(object):
     def __init__(self, bufsize=None):
+        # type: (int | None) -> None
         self.buffer = Buffer(bufsize or MSG_BUFFER_SIZE)
         self.write = self.buffer.write
-        self.results = {}
+        self.results = {}  # type: dict[int, 'Result' | Callable[[int, bytes], None]]
         self.counter = itertools.count(1)
         self.result_cond = threading.Condition()
 
     def reset(self):
+        # type: () -> None
         self.buffer = self.buffer.fresh()
         self.write = self.buffer.write
 
     def make_result(self, on_result):
+        # type: (OnResult | None) -> 'Result'
         msg_id = next(self.counter)
         result = self.results[msg_id] = Result(self, msg_id, on_result)
         return result
 
-    def write_msg(self, msg_id, msg_type, data, compress=None):
+    def write_msg(self, msg_id, msg_type, data, compress=False):
+        # type: (int, int, bytes, bool) -> None
         self.buffer.write(msg_encode(msg_id, msg_type, data, compress=compress))
 
     def done(self, msg_id, result=None):
+        # type: (int, Any) -> None
         self.results.pop(msg_id, None)
         self.write_msg(msg_id, RESULT, bstr(json.dumps({'result': result})))
 
     def error(self, msg_id, error):
+        # type: (int, Any) -> None
         self.results.pop(msg_id, None)
         self.write_msg(msg_id, RESULT, bstr(json.dumps({'error': error})))
 
     def data_subscribe(self, msg_id, handler):
+        # type: (int, Callable[[int, bytes], None]) -> None
         self.results[msg_id] = handler
 
-    def write_data(self, msg_id, data_type, data, compress=None):
+    def write_data(self, msg_id, data_type, data, compress=False):
+        # type: (int, int, bytes, bool) -> None
         self.write_msg(msg_id, DATA_FLAG | data_type, data, compress=compress)
 
     def end_data(self, msg_id):
+        # type: (int) -> None
         self.write_msg(msg_id, DATA_FLAG, b'')
 
     def forget(self, msg_id):  # pragma: no cover
+        # type: (int) -> None
         self.results.pop(msg_id, None)
 
     def handle_msg(self, msg_id, msg_type, data):
+        # type: (int, int, bytes) -> None
         if msg_type & DATA_FLAG:
             data_type = msg_type & ~DATA_FLAG
             msg_type = DATA
@@ -327,9 +401,9 @@ class Router(object):
                 r = self.results.pop(msg_id, None)
                 if r:
                     if 'error' in info:
-                        r.set_error(info['error'])
+                        r.set_error(info['error'])  # type: ignore[union-attr]  # TODO
                     else:
-                        r.set_result(info['result'])
+                        r.set_result(info['result'])  # type: ignore[union-attr]  # TODO
                 with self.result_cond:
                     self.result_cond.notify_all()
             elif msg_type == DATA:
@@ -346,6 +420,7 @@ class Router(object):
 
 
 def router():  # pragma: no cover
+    # type: () -> None
     debug('starting router', level=2)
     r = Router()
     r.buffer.write(FD(0).read(10))
@@ -356,6 +431,7 @@ def router():  # pragma: no cover
 
 
 def inject_modules(router, msg_id, modules):  # pragma: no cover
+    # type: (Router, int, list[dict[str, Any]]) -> None
     for minfo in modules:
         debug('injecting', minfo['module'], id(router), level=1)
         mname = nstr(minfo['module'])
@@ -391,18 +467,21 @@ class ResultException(Exception):
 
 class Result:
     def __init__(self, router, msg_id, on_result=None):
+        # type: (Router, int, OnResult | None) -> None
         self.router = router
         self.msg_id = msg_id
         self.result = None
         self.error = None
-        self.data = {}
+        self.data = {}  # type: dict[int, list[Any]]
         self.on_result = on_result
         self.done = False
 
     def ignore(self):  # pragma: no cover
+        # type: () -> None
         self.router.forget(self.msg_id)
 
     def wait(self):
+        # type: () -> Any
         while not self.done:
             with self.router.result_cond:
                 while not self.done:
@@ -412,6 +491,7 @@ class Result:
         return self.result
 
     def set_result(self, value):
+        # type: (Any) -> None
         if self.on_result:
             self.result = self.on_result(self, value)
         else:
@@ -419,29 +499,36 @@ class Result:
         self.done = True
 
     def set_error(self, value):
+        # type: (Any) -> None
         self.error = value
         self.done = True
 
     def write_data(self, data_type, data, compress=False):
+        # type: (int, bytes, bool) -> None
         self.router.write_data(self.msg_id, data_type, data, compress)
 
     def end_data(self):
+        # type: () -> None
         self.router.end_data(self.msg_id)
 
     def feed(self, data_type, data):
+        # type: (int, bytes) -> None
         self.data.setdefault(data_type, []).append(data)
 
 
 def msg_call(msg_id, module, fname, args, kwargs={}, compress=False):
+    # type: (int, str, str, Sequence[Any], dict[str, Any], bool) -> bytes
     data = bstr(json.dumps({'module': module, 'fn': fname, 'args': args, 'kwargs': kwargs}))
     return msg_encode(msg_id, CALL, data, compress=compress)
 
 
 class LocalRouter(Router):
     def check(self):
+        # type: () -> None
         pass
 
     def call(self, module, fname, *args, **kwargs):
+        # type: (str, str, Any, Any) -> Result
         self.check()
         compress = kwargs.pop('compress_', False)
         on_result = kwargs.pop('on_result_', None)
